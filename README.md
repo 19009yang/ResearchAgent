@@ -233,7 +233,7 @@ Research Summary
 
 本项目参考了：  
 
-- [zazencodes-season-2](https://github.com/zazencodes/zazencodes-season-2/blob/main/src/ai-scientific-research-agent/sci_research_agent/arxiv.py)
+- [zazencodes-season-2](https://github.com/zazencodes/zazencodes-season-2/tree/main/src/ai-scientific-research-agent)
 
 ---
 
