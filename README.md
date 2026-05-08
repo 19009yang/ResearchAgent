@@ -82,37 +82,6 @@
 
 ---
 
-# Project Structure
-
-```text
-ResearchAgent/
-│
-├── agent/                  # Agent Workflow
-│   ├── ReAct_Agent.py
-│   └── ...
-│
-├── tools/                  # Tool Calling
-│   ├── arxiv_search.py
-│   ├── openalex_search.py
-│   ├── semantic_scholar.py
-│   └── ...
-│
-├── utils/                  # Utility Functions
-│   ├── pdf_parser.py
-│   ├── logger.py
-│   └── ...
-│
-├── prompts/                # Prompt Templates
-│
-├── main.py                 # Program Entry
-│
-├── .env                    # API Keys
-├── requirements.txt
-└── README.md
-```
-
----
-
 # Installation
 
 ## Clone Repository
