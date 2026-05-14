@@ -1,6 +1,7 @@
 import requests
 from pathlib import Path
 import logging
+from langchain_core.tools import tool
 
 logger = logging.getLogger(__name__)
 

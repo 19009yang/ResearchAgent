@@ -22,6 +22,8 @@ import io
 import logging
 from typing import Dict, List
 from urllib.parse import urlparse, urlunparse
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from services.paper_chunker import AcademicChunker
 
 import pymupdf
 import requests
@@ -36,10 +38,10 @@ MAX_PDF_SIZE_MB = 50
 MAX_PAGES = 50
 
 # 每个 chunk 最大字符数
-CHUNK_SIZE = 4000
+CHUNK_SIZE = 1000
 
 # chunk overlap
-CHUNK_OVERLAP = 300
+CHUNK_OVERLAP = 200
 
 # requests timeout
 REQUEST_TIMEOUT = (10, 60)
@@ -57,38 +59,72 @@ session = requests.Session()
 # ---------------------------------------------------
 # 文本 chunk
 # ---------------------------------------------------
-def split_text(
+# def split_text(
+#     text: str,
+#     chunk_size: int = CHUNK_SIZE,
+#     overlap: int = CHUNK_OVERLAP,
+# ) -> List[str]:
+#     """
+#     文本切块
+
+#     用于:
+#     - RAG
+#     - embedding
+#     - 长上下文控制
+#     """
+
+#     if not text:
+#         return []
+
+#     chunks = []
+
+#     start = 0
+
+#     while start < len(text):
+
+#         end = start + chunk_size
+
+#         chunk = text[start:end]
+
+#         chunks.append(chunk)
+
+#         start += chunk_size - overlap
+
+#     return chunks
+
+
+
+def split_text(     
     text: str,
     chunk_size: int = CHUNK_SIZE,
-    overlap: int = CHUNK_OVERLAP,
-) -> List[str]:
+    overlap: int = CHUNK_OVERLAP,)-> List[str]:
     """
-    文本切块
-
-    用于:
-    - RAG
-    - embedding
-    - 长上下文控制
+    智能递归切分
     """
+    text_splitter = RecursiveCharacterTextSplitter(
+        separators=[
+            "\nAbstract",
+            "\nIntroduction",
+            "\nRelated Work",
+            "\nMethod",
+            "\nMethods",
+            "\nExperiment",
+            "\nExperiments",
+            "\nResults",
+            "\nDiscussion",
+            "\nConclusion",
+            "\nReferences",
+            "\n\n",
+            "\n",
+            ". ",
+            " ",
+            ""
+        ],
+    chunk_size=chunk_size,
+    overlap=overlap
+    )
+    return text_splitter.split_text(text)
 
-    if not text:
-        return []
-
-    chunks = []
-
-    start = 0
-
-    while start < len(text):
-
-        end = start + chunk_size
-
-        chunk = text[start:end]
-
-        chunks.append(chunk)
-
-        start += chunk_size - overlap
-
-    return chunks
 
 
 # ---------------------------------------------------
@@ -138,8 +174,7 @@ def read_pdf(url: str) -> dict:
     读取 PDF 并提取文本
 
     参数:
-        url:
-            PDF URL
+        url: PDF URL (http/https) 或本地文件路径
 
     返回:
         {
@@ -152,7 +187,7 @@ def read_pdf(url: str) -> dict:
         }
 
     功能:
-    1. 下载 PDF
+    1. 下载 PDF（远程）或直接读取（本地）
     2. 安全检查
     3. 提取文本
     4. Chunking
@@ -163,103 +198,88 @@ def read_pdf(url: str) -> dict:
     try:
 
         # ---------------------------------------------------
-        # 1. URL 脱敏日志
+        # 1. 判断本地路径 or URL
         # ---------------------------------------------------
         parsed = urlparse(url)
 
-        safe_url = urlunparse(
-            (
-                parsed.scheme,
-                parsed.netloc,
-                parsed.path,
-                "",
-                "",
-                "",
-            )
-        )
+        if parsed.scheme in ("http", "https"):
 
-        logger.info(
-            f"Downloading PDF: {safe_url}"
-        )
-
-        # ---------------------------------------------------
-        # 2. 下载 PDF
-        # ---------------------------------------------------
-        response = session.get(
-            url,
-            timeout=REQUEST_TIMEOUT,
-            stream=True,
-        )
-
-        response.raise_for_status()
-
-        # ---------------------------------------------------
-        # 3. Content-Type 检查
-        # ---------------------------------------------------
-        content_type = response.headers.get(
-            "Content-Type",
-            "",
-        )
-
-        if "pdf" not in content_type.lower():
-
-            return {
-                "success": False,
-                "error": (
-                    "URL is not a PDF"
-                ),
-            }
-
-        # ---------------------------------------------------
-        # 4. 文件大小检查
-        # ---------------------------------------------------
-        content_length = response.headers.get(
-            "Content-Length"
-        )
-
-        if content_length:
-
-            size_mb = (
-                int(content_length)
-                / 1024
-                / 1024
+            # -------------------------------------------
+            # 远程 URL：下载
+            # -------------------------------------------
+            safe_url = urlunparse(
+                (
+                    parsed.scheme,
+                    parsed.netloc,
+                    parsed.path,
+                    "",
+                    "",
+                    "",
+                )
             )
 
-            if size_mb > MAX_PDF_SIZE_MB:
+            logger.info(f"Downloading PDF: {safe_url}")
 
+            response = session.get(
+                url,
+                timeout=REQUEST_TIMEOUT,
+                stream=True,
+            )
+            response.raise_for_status()
+
+            # Content-Type 检查
+            content_type = response.headers.get("Content-Type", "")
+            if "pdf" not in content_type.lower():
                 return {
                     "success": False,
-                    "error": (
-                        f"PDF too large "
-                        f"({size_mb:.1f} MB)"
-                    ),
+                    "error": "URL is not a PDF",
                 }
 
-        logger.info(
-            "PDF downloaded successfully"
-        )
+            # 文件大小检查
+            content_length = response.headers.get("Content-Length")
+            if content_length:
+                size_mb = int(content_length) / 1024 / 1024
+                if size_mb > MAX_PDF_SIZE_MB:
+                    return {
+                        "success": False,
+                        "error": f"PDF too large ({size_mb:.1f} MB)",
+                    }
 
-        # ---------------------------------------------------
-        # 5. 读取 PDF
-        # ---------------------------------------------------
-        pdf_bytes = io.BytesIO()
+            logger.info("PDF downloaded successfully")
 
-        for chunk in response.iter_content(
-            chunk_size=8192
-        ):
+            pdf_bytes = io.BytesIO()
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    pdf_bytes.write(chunk)
+            pdf_bytes.seek(0)
 
-            if chunk:
-                pdf_bytes.write(chunk)
+            doc = pymupdf.open(
+                stream=pdf_bytes.read(),
+                filetype="pdf",
+            )
 
-        pdf_bytes.seek(0)
+        else:
+            # -------------------------------------------
+            # 本地文件：直接读取
+            # -------------------------------------------
+            import os
 
-        # ---------------------------------------------------
-        # 6. 打开 PDF
-        # ---------------------------------------------------
-        doc = pymupdf.open(
-            stream=pdf_bytes.read(),
-            filetype="pdf",
-        )
+            if not os.path.isfile(url):
+                return {
+                    "success": False,
+                    "error": f"File not found: {url}",
+                }
+
+            # 文件大小检查
+            size_mb = os.path.getsize(url) / 1024 / 1024
+            if size_mb > MAX_PDF_SIZE_MB:
+                return {
+                    "success": False,
+                    "error": f"PDF too large ({size_mb:.1f} MB)",
+                }
+
+            logger.info(f"Reading local PDF: {url}")
+            doc = pymupdf.open(url)
 
         num_pages = len(doc)
 
@@ -371,9 +391,13 @@ def read_pdf(url: str) -> dict:
         # ---------------------------------------------------
         # 11. chunking
         # ---------------------------------------------------
-        text_chunks = split_text(
-            full_text
-        )
+        # text_chunks = split_text(
+        #     full_text
+        # )
+
+        chunker = AcademicChunker()
+
+        text_chunks = chunker.chunk(full_text)
 
         chunks = []
 

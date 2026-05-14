@@ -1,8 +1,9 @@
 import logging
 from io import BytesIO
-from typing import Annotated, Literal
+from typing import Annotated, Literal,Sequence
 import os
 from dotenv import load_dotenv
+
 
 # from langchain_anthropic import ChatAnthropic
 from langchain_ollama.chat_models import ChatOllama
@@ -19,6 +20,7 @@ from typing_extensions import TypedDict
 from tools.search_arxiv_v2 import paper_search
 from tools.Latex import render_latex_pdf
 from tools.pdf_parser import read_pdf
+from tools.download_arxiv_pdf import download_arxiv_pdf_tool
 
 logger = logging.getLogger(__name__)
 INITIAL_PROMPT = """
@@ -28,7 +30,7 @@ INITIAL_PROMPT = """
 
 首先，请与我进行一次交流，以确定研究主题。
 随后，请向我介绍一些近期发表的、涉及该主题的论文。
-一旦我确定了感兴趣的论文，请您阅读该论文，以了解其中开展的研究及其成果。
+一旦我确定了感兴趣的论文，请你先下载它，然后请您阅读该论文，以了解其中开展的研究及其成果。
 请特别关注文中提出的未来研究思路，并仔细思考，然后提出几个自己的想法。将这些想法告知我，我将决定你应围绕其中哪一个撰写论文。
 最后，我会请你着手撰写论文。请确保在论文中包含数学公式。论文长度不要超过5页。
 完成后，你应将其渲染为 LaTeX PDF 格式。
@@ -36,6 +38,13 @@ INITIAL_PROMPT = """
 回复消息必须为中文。
 必须按顺序调用工具。
 请勿并行调用多个 arxiv_search 工具。
+
+如果工具执行失败，
+请不要编造答案。
+
+相反，应该：
+- 说明工具失败的原因
+- 请用户重试
 """
 #prompt中防止并行调用arxiv_search
 
@@ -85,7 +94,7 @@ def print_stream(stream):
 def run_workflow():
     logger.info("Initializing workflow")
 
-    tools = [paper_search, read_pdf, render_latex_pdf]
+    tools = [paper_search, read_pdf, render_latex_pdf, download_arxiv_pdf_tool]
     tool_node = ToolNode(tools)
 
     #创建模型
