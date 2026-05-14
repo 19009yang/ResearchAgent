@@ -1,248 +1,105 @@
 # ResearchAgent
 
-一个基于 LangGraph + LLM 的科研文献智能研究 Agent。
+基于 LangGraph 的 ReAct Agent，用于科研文献检索、阅读与论文生成。
 
-该项目旨在构建一个能够：
+## 工作流
 
-- 自动检索论文
-- 阅读与解析论文
-- 提取关键信息
-- 生成研究综述
-- 多步推理与工具调用
-- 自动迭代研究流程
+Agent 通过与用户对话，逐步完成以下流程：
 
-的 Agent 系统。
+1. 确定研究主题
+2. 检索相关论文（OpenAlex + Semantic Scholar）
+3. 下载论文 PDF
+4. 阅读解析论文内容
+5. 提取研究思路并提出新方向
+6. 撰写论文并渲染为 PDF
 
-项目目前重点关注：
+## 项目结构
 
-- arXiv / OpenAlex / Semantic Scholar 文献检索
-- PDF 下载与解析
-- 多 Agent Workflow
-- ReAct Agent
-- LangGraph 状态机
-- DeepSeek / OpenAI LLM 接入
-- 科研自动化流程
+```
+.
+├── main.py                    # 入口
+├── agent/
+│   └── ReAct_Agent.py         # LangGraph ReAct Agent（状态机 + 工具调用）
+├── tools/
+│   ├── search_arxiv_v2.py     # paper_search 工具（调用 search pipeline）
+│   ├── download_arxiv_pdf.py  # arXiv PDF 下载工具
+│   ├── pdf_parser.py          # PDF 读取/解析/chunking/section 检测
+│   └── Latex.py               # LaTeX → PDF 编译工具
+├── pipeline/
+│   └── search_pipeline.py     # 多源搜索编排（OpenAlex → Semantic Scholar → arXiv）
+├── services/
+│   ├── openalex_search.py     # OpenAlex API 客户端
+│   ├── semantic_scholar_enrich.py  # Semantic Scholar 富化
+│   ├── arxiv.py               # arXiv PDF URL 构建与下载
+│   └── paper_chunker.py       # 学术论文语义分块（含 embedding）
+├── models/
+│   └── paper.py               # Paper 数据模型
+└── logs/                      # 日志输出
+```
 
----
+## 工具
 
-# Features
+Agent 注册了 4 个工具：
 
-## 文献检索
+| 工具 | 功能 |
+|------|------|
+| `paper_search` | 多源论文检索，返回论文元数据 |
+| `read_pdf` | 下载/读取 PDF，提取文本、分块、检测 sections |
+| `download_arxiv_pdf_tool` | 下载 arXiv PDF 到本地 |
+| `render_latex_pdf` | 编译 LaTeX 并生成 PDF（latexmk） |
 
-支持：
+## 快速开始
 
-- arXiv API
-- OpenAlex API
-- Semantic Scholar API
+### 环境要求
 
-支持：
+- Python >= 3.13
+- [uv](https://docs.astral.sh/uv/)（推荐）或 pip
+- LaTeX 发行版（如需 PDF 渲染：`latexmk` + `pdflatex`）
 
-- 关键词检索
-- 多源融合
-- Retry 重试机制
-- API Rate Limit 处理
-
----
-
-## Agent Workflow
-
-基于 LangGraph 构建：
-
-- 状态机 Workflow
-- Tool Calling
-- 多轮推理
-- 流式输出
-- ReAct Agent
-
----
-
-## PDF 处理
-
-支持：
-
-- PDF 下载
-- PDF 文本提取
-- 文献内容解析
-- Metadata 提取
-
----
-
-## LLM 支持
-
-目前支持：
-
-- DeepSeek
-- OpenAI
-
-后续计划：
-
-- Claude
-- Gemini
-- 本地模型
-
----
-
-# Installation
-
-## Clone Repository
+### 安装
 
 ```bash
 git clone https://github.com/19009yang/ResearchAgent.git
-
 cd ResearchAgent
-```
-
----
-
-## Create Virtual Environment
-
-推荐使用 uv：
-
-```bash
-uv venv
-```
-
-激活环境：
-
-### Windows
-
-```bash
-.venv\Scripts\activate
-```
-
-### Linux / macOS
-
-```bash
-source .venv/bin/activate
-```
-
----
-
-## Install Dependencies
-
-```bash
 uv sync
 ```
 
----
+### 配置
 
-# Environment Variables
-
-创建：
-
-```text
-.env
-```
-
-示例：
+创建 `.env` 文件：
 
 ```env
-OPENAI_API_KEY=your_key
+LLM_PROVIDER=deepseek          # deepseek | openai | ollama | anthropic
+LLM_MODEL=deepseek-chat
 DEEPSEEK_API_KEY=your_key
-SEMANTIC_SCHOLAR_API_KEY=your_key
+DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
+SEMANTIC_SCHOLAR_API_KEY=your_key   # 可选，用于论文检索富化
 ```
 
----
-
-# Usage
-
-运行 Agent：
-
-```bash
-python main.py
-```
-
-或者：
+### 运行
 
 ```bash
 uv run main.py
 ```
 
----
+启动后 Agent 会以中文与你对话，引导你完成从选题到生成论文的全流程。
 
-# Example Workflow
+## 技术栈
 
-```text
-User Query
-    ↓
-LLM Planning
-    ↓
-Paper Search
-    ↓
-PDF Download
-    ↓
-PDF Parsing
-    ↓
-Information Extraction
-    ↓
-LLM Reasoning
-    ↓
-Research Summary
-```
+- **LangGraph** — 状态机驱动的 Agent 工作流（ReAct 循环）
+- **LangChain** — 工具定义与 LLM 抽象
+- **OpenAlex / Semantic Scholar / arXiv** — 多源论文检索
+- **PyMuPDF** — PDF 文本提取
+- **sentence-transformers** — 语义分块（BGE embedding）
+- **latexmk** — LaTeX 编译
 
----
+## 约束
 
-# Current Progress
+- 工具串行调用（禁止并行）
+- PDF 限制：50MB / 50 页 / 100K 字符
+- LaTeX 编译：60s 超时，禁用 shell-escape
+- 日志仅输出到 `logs/sci_research_agent.log`
 
-- [x] arXiv Search
-- [x] OpenAlex Search
-- [x] Semantic Scholar Search
-- [x] PDF Parsing
-- [x] LangGraph Workflow
-- [x] ReAct Agent
-- [x] Streaming Output
-- [ ] Multi-Agent Collaboration
-- [ ] RAG Knowledge Base
-- [ ] Vector Database
-- [ ] Research Report Generation
-- [ ] Web UI
+## License
 
----
-
-# Roadmap
-
-未来计划：
-
-- Deep Research Agent
-- 自动文献综述生成
-- 多论文交叉分析
-- Citation Graph
-- Knowledge Graph
-- Local RAG
-- Agent Memory
-- Autonomous Research Pipeline
-
----
-
-# Tech Stack
-
-- Python
-- LangGraph
-- LangChain
-- DeepSeek
-- OpenAI
-- arXiv API
-- OpenAlex API
-- Semantic Scholar API
-- PyMuPDF
-- pypdf
-
----
-
-# Inspiration
-
-本项目参考了：  
-
-- [zazencodes-season-2](https://github.com/zazencodes/zazencodes-season-2/tree/main/src/ai-scientific-research-agent)
-
----
-
-# License
-
-MIT License
-
----
-
-# Author
-
-GitHub: [19009yang](https://github.com/19009yang?utm_source=chatgpt.com)
+MIT
